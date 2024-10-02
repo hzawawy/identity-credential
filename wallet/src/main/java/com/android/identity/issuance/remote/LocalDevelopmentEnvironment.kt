@@ -16,6 +16,7 @@ import com.android.identity_credential.wallet.R
 import com.android.identity_credential.wallet.SettingsModel
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.android.Android
+import kotlinx.coroutines.runBlocking
 import kotlinx.io.bytestring.ByteString
 import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets
@@ -27,12 +28,12 @@ import kotlin.reflect.cast
  * This implementation of [FlowEnvironment] can be used to run wallet server locally in the app,
  * which is useful for development, but should never be done in production.
  */
-class LocalDevelopmentEnvironment(
+internal class LocalDevelopmentEnvironment(
     context: Context,
     settingsModel: SettingsModel,
     private val secureArea: SecureArea,
     private val notifications: FlowNotifications,
-    private val applicationSupport: ApplicationSupport
+    private val applicationSupportSupplier: WalletServerProvider.ApplicationSupportSupplier
 ) : FlowEnvironment {
     private var configuration = ConfigurationImpl(context, settingsModel)
     private val storage = StorageImpl(context, "dev_local_data")
@@ -58,7 +59,13 @@ class LocalDevelopmentEnvironment(
             FlowNotifications::class -> notifications
             HttpClient::class -> httpClient
             SecureArea::class -> secureArea
-            ApplicationSupport::class -> applicationSupport
+            ApplicationSupport::class -> runBlocking {
+                // We do not want to attempt to obtain applicationSupport ahead of time
+                // as there may be connection problems and we want to deal with them only
+                // if we have to, thus runBlocking is used. But this code is only used for
+                // "dev:" Wallet Server.
+                applicationSupportSupplier.getApplicationSupport()
+            }
             else -> return null
         })
     }
@@ -71,7 +78,7 @@ class LocalDevelopmentEnvironment(
                 "androidRequireGmsAttestation" -> "false"
                 "androidRequireVerifiedBootGreen" -> "false"
                 "androidRequireAppSignatureCertificateDigests" -> ""
-                "issuingAuthorityList" -> "utopia_local utopia_local_pid"
+                "issuingAuthorityList" -> "utopia_local utopia_local_pid utopia_local_photoid"
                 "issuingAuthority.utopia_local.name" -> "Utopia DMV (Local)"
                 "issuingAuthority.utopia_local.type" -> "DrivingLicense"
                 "issuingAuthority.utopia_local.description" -> "Utopia Driver's License (Local)"
@@ -84,6 +91,12 @@ class LocalDevelopmentEnvironment(
                 "issuingAuthority.utopia_local_pid.logo" -> "utopia_local_pid/logo.png"
                 "issuingAuthority.utopia_local_pid.cardArt" -> "utopia_local_pid/card_art.png"
                 "issuingAuthority.utopia_local_pid.requireUserAuthenticationToViewDocument" -> "false"
+                "issuingAuthority.utopia_local_photoid.name" -> "Utopia Gov (Local)"
+                "issuingAuthority.utopia_local_photoid.type" -> "PhotoId"
+                "issuingAuthority.utopia_local_photoid.description" -> "Utopia Photo ID (Local)"
+                "issuingAuthority.utopia_local_photoid.logo" -> "utopia_local_photoid/logo.png"
+                "issuingAuthority.utopia_local_photoid.cardArt" -> "utopia_local_photoid/card_art.png"
+                "issuingAuthority.utopia_local_photoid.requireUserAuthenticationToViewDocument" -> "false"
                 "cloudSecureAreaUrl" -> settingsModel.cloudSecureAreaUrl.value
                 else -> null
             }
@@ -107,12 +120,22 @@ class LocalDevelopmentEnvironment(
                         R.drawable.utopia_pid_card_art,
                         Bitmap.CompressFormat.PNG
                     )
+                "utopia_local_photoid/card_art.png" ->
+                    bitmapData(
+                        R.drawable.utopia_photoid_card_art,
+                        Bitmap.CompressFormat.PNG
+                    )
                 "utopia_local/logo.png" ->
                     bitmapData(
                         R.drawable.utopia_dmv_issuing_authority_logo,
                         Bitmap.CompressFormat.PNG
                     )
                 "utopia_local_pid/logo.png" ->
+                    bitmapData(
+                        R.drawable.utopia_pid_issuing_authority_logo,
+                        Bitmap.CompressFormat.PNG
+                    )
+                "utopia_local_photoid/logo.png" ->
                     bitmapData(
                         R.drawable.utopia_pid_issuing_authority_logo,
                         Bitmap.CompressFormat.PNG
@@ -172,6 +195,8 @@ class LocalDevelopmentEnvironment(
                     context.resources.getString(R.string.utopia_local_issuing_authority_tos)
                 "utopia_local_pid/tos.html" ->
                     context.resources.getString(R.string.utopia_local_issuing_authority_pid_tos)
+                "utopia_local_photoid/tos.html" ->
+                    context.resources.getString(R.string.utopia_local_issuing_authority_photoid_tos)
                 "funke/tos.html" ->
                     context.resources.getString(R.string.funke_issuing_authority_tos)
                 else -> null
